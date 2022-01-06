@@ -1,4 +1,4 @@
-package main
+package gosimplex
 
 import (
 	"fmt"
@@ -42,7 +42,7 @@ func print_mat(m int, n int, data []float64) string {
 }
 
 
-func soluzione_primale_base_amm(A mat.Dense, b mat.Dense) mat.Dense {
+func amm_primal_solution(A mat.Dense, b mat.Dense) mat.Dense {
 	var inv_A mat.Dense
 	var x mat.Dense
 	inv_A.Inverse(&A)
@@ -56,7 +56,7 @@ func soluzione_primale_base_amm(A mat.Dense, b mat.Dense) mat.Dense {
 }
 
 
-func soluzione_duale(c mat.Dense, A mat.Dense, b mat.Dense, base []int) ([]float64, bool, int, int) {
+func dual_solution(c mat.Dense, A mat.Dense, b mat.Dense, base []int) ([]float64, bool, int, int) {
 	var yB mat.Dense
 	var inv_A mat.Dense
 	y := []float64{}
@@ -101,7 +101,7 @@ func soluzione_duale(c mat.Dense, A mat.Dense, b mat.Dense, base []int) ([]float
 }
 
 
-func dir_crescita(A, AB, b, c mat.Dense, base, not_base []int, h int) (mat.Dense, []int, bool) {
+func dir_growth(A, AB, b, c mat.Dense, base, not_base []int, h int) (mat.Dense, []int, bool) {
 	var tmp mat.Dense
 	var xi mat.Dense
 	var data_inv_AB []float64
@@ -119,28 +119,29 @@ func dir_crescita(A, AB, b, c mat.Dense, base, not_base []int, h int) (mat.Dense
 	xi_string := print_mat(len(b.RawMatrix().Data),1,xi.RawMatrix().Data)
 	fmt.Printf("\txi = %v * %v = %v\n", inv_AB_string, u_string, xi_string)
 
-	//Check condizione problema illimitato
-	AN := mat.NewDense(len(not_base), len(c.RawMatrix().Data), nil)	
-	for i := 0 ; i < len(not_base); i++ {					
-		AN.SetRow(i,A.RawRowView(not_base[i]-1))
-	}
-
-	var p mat.Dense
-	p.Mul(AN, &xi)
-
+	//Check unlimited pb
 	cond := false
+	if len(not_base) == len(xi.RawMatrix().Data) {
+		AN := mat.NewDense(len(not_base), len(c.RawMatrix().Data), nil)	
+		for i := 0 ; i < len(not_base); i++ {					
+			AN.SetRow(i,A.RawRowView(not_base[i]-1))
+		}
 
-	// for _,j := range p.RawMatrix().Data {
-	// 	if j < 0 {
-	// 		cond = true
-	// 	}
-	// }
+		var p mat.Dense
+		p.Mul(AN, &xi)
+
+		for _,j := range p.RawMatrix().Data {
+			if j < 0 {
+				cond = true
+			}
+		}
+	}
 
 	return xi, not_base, cond
 }
 
 
-func passo_massimo(A, b, c, x, xi mat.Dense, not_base []int) (float64, int) {
+func max_step(A, b, c, x, xi mat.Dense, not_base []int) (float64, int) {
 	res := []float64{}
 	for _,j := range not_base {
 		var m mat.VecDense
@@ -170,22 +171,22 @@ func passo_massimo(A, b, c, x, xi mat.Dense, not_base []int) (float64, int) {
 }
 
 
-func simplesso_primale(data_A []float64, data_b []float64, data_c []float64, base []int) {
+func primal(data_A []float64, data_b []float64, data_c []float64, base []int) {
 	A := mat.NewDense(len(data_b), len(data_c), data_A)
 	b := mat.NewDense(len(data_b),1, data_b)
 	c := mat.NewDense(1, len(data_c), data_c)
-	iterazioni := 0
+	iteration := 0
 	state := ""
 
 	for state == "" {
-		iterazioni++
+		iteration++
 		not_base := []int{}
-		//inizializzazione AB
+		//initialization AB
 		AB := mat.NewDense(len(base), len(data_c), nil)	
 		for i := 0 ; i < len(base); i++ {					
 			AB.SetRow(i,A.RawRowView(base[i]-1))
 		}
-		//inizializzazione bB
+		//initialization bB
 		bB := mat.NewDense(len(base),1,nil)				
 		for i := 0 ; i < len(base); i++ {					
 			bB.SetRow(i,b.RawRowView(base[i]-1))
@@ -195,16 +196,17 @@ func simplesso_primale(data_A []float64, data_b []float64, data_c []float64, bas
 				not_base = append(not_base, i)
 			}
 		}
-		fmt.Printf("%v. iterazione: B = %v, N = %v\n", iterazioni, base, not_base)
-		x := soluzione_primale_base_amm(*AB,*bB)
-		y, cond1, h, real_h := soluzione_duale(*c,*AB,*bB,base)
+		fmt.Printf("%v. iteration: B = %v, N = %v\n", iteration, base, not_base)
+		x := amm_primal_solution(*AB,*bB)
+		y, cond1, h, real_h := dual_solution(*c,*AB,*bB,base)
 
 		if !cond1 {
-			xi, not_base, cond2 := dir_crescita(*A, *AB,*bB, *c, base, not_base, h)
+			xi, not_base, cond2 := dir_growth(*A, *AB,*bB, *c, base, not_base, h)
 			if cond2 {
-				state = "Problema illimitato"
+				fmt.Printf("\nUnlimited\n")
+				state = "Unlimited"
 			} else {
-				lambda,k := passo_massimo(*A, *b, *c, x, xi, not_base)
+				lambda,k := max_step(*A, *b, *c, x, xi, not_base)
 				base = append(base, k)
 				base = slice_remove(base, index_of(base, real_h))
 				sort.Ints(base)
@@ -216,14 +218,4 @@ func simplesso_primale(data_A []float64, data_b []float64, data_c []float64, bas
 			state = "Ottimo"
 		}
 	}
-}
-
-
-func main() {
-	A := []float64{1,-1,0,1,1,1,-1,1,-1,0}
-	b := []float64{1,2,3,1,0}
-	c := []float64{2,1}
-	B := []int{4,5}
-
-	simplesso_primale(A,b,c,B)
 }
