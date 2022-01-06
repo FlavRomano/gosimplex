@@ -171,7 +171,7 @@ func max_step(A, b, c, x, xi mat.Dense, not_base []int) (float64, int) {
 }
 
 
-func primal(data_A []float64, data_b []float64, data_c []float64, base []int) {
+func Primal(data_A []float64, data_b []float64, data_c []float64, base []int) {
 	A := mat.NewDense(len(data_b), len(data_c), data_A)
 	b := mat.NewDense(len(data_b),1, data_b)
 	c := mat.NewDense(1, len(data_c), data_c)
