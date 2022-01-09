@@ -7,6 +7,21 @@ import (
 	"gonum.org/v1/gonum/mat"
 )
 
+
+func slice_min(slice []float64) float64 {
+	if len(slice) > 0 {
+		x := slice[0]
+		for i := range slice {
+			if slice[i] < x {
+				x = slice[i]
+			}
+		}
+		return x
+	} 
+	return -1
+}
+
+
 func index_of(slice []int, k int) int {
 	i := 0
 	for i < len(slice) {
@@ -56,13 +71,13 @@ func amm_primal_solution(A mat.Dense, b mat.Dense) mat.Dense {
 }
 
 
-func dual_solution(c mat.Dense, A mat.Dense, b mat.Dense, base []int) ([]float64, bool, int, int) {
+func dual_solution(c, A, b mat.Dense, data_b []float64, base []int) ([]float64, bool, int, int) {
 	var yB mat.Dense
 	var inv_A mat.Dense
 	y := []float64{}
 	inv_A.Inverse(&A)
 	yB.Mul(&c,&inv_A)
-	for i := 0; i <= len(A.RawMatrix().Data); i++ {
+	for i := 0; i < len(data_b); i++ {
 		y = append(y, 0)
 	}
 	for i,j := range base {
@@ -120,20 +135,18 @@ func dir_growth(A, AB, b, c mat.Dense, base, not_base []int, h int) (mat.Dense, 
 	fmt.Printf("\txi = %v * %v = %v\n", inv_AB_string, u_string, xi_string)
 
 	//Check unlimited pb
-	cond := false
-	if len(not_base) == len(xi.RawMatrix().Data) {
-		AN := mat.NewDense(len(not_base), len(c.RawMatrix().Data), nil)	
-		for i := 0 ; i < len(not_base); i++ {					
-			AN.SetRow(i,A.RawRowView(not_base[i]-1))
-		}
+	cond := true
+	AN := mat.NewDense(len(not_base), len(c.RawMatrix().Data), nil)	
 
-		var p mat.Dense
-		p.Mul(AN, &xi)
+	for i := 0 ; i < len(not_base); i++ {					
+		AN.SetRow(i,A.RawRowView(not_base[i]-1))
+	}
 
-		for _,j := range p.RawMatrix().Data {
-			if j < 0 {
-				cond = true
-			}
+	var p mat.Dense
+	p.Mul(AN, &xi)
+	for _,j := range p.RawMatrix().Data {
+		if j > 0 {
+			cond = false
 		}
 	}
 
@@ -158,14 +171,18 @@ func max_step(A, b, c, x, xi mat.Dense, not_base []int) (float64, int) {
 		} 
 	}
 
-	// minimum of res
-	lambda,k := res[0],res[1] // [lambda0, k0, ..., lambdai-1, ki-1] 
+	lambda := res[0] // [lambda0, k0, ..., lambdai-1, ki-1] 
+	var k float64
+	ks := []float64{}
 	for i := range res {
 		if lambda >= res[i] && i % 2 == 0 {
 			lambda = res[i]
 			k = res[i+1]
+			ks = append(ks, k)
 		}
 	}
+	// Bland
+	k = slice_min(ks)
 
 	return lambda, int(k)
 }
@@ -191,19 +208,19 @@ func Primal(data_A []float64, data_b []float64, data_c []float64, base []int) {
 		for i := 0 ; i < len(base); i++ {					
 			bB.SetRow(i,b.RawRowView(base[i]-1))
 		}
-		for i := 1; i <= len(AB.RawMatrix().Data)+1; i++ {
+		for i := 1; i <= len(data_b); i++ {
 			if !int_In_Slice(i, base) {
 				not_base = append(not_base, i)
 			}
 		}
 		fmt.Printf("%v. iteration: B = %v, N = %v\n", iteration, base, not_base)
 		x := amm_primal_solution(*AB,*bB)
-		y, cond1, h, real_h := dual_solution(*c,*AB,*bB,base)
+		y, cond1, h, real_h := dual_solution(*c,*AB,*bB, data_b,base)
 
 		if !cond1 {
 			xi, not_base, cond2 := dir_growth(*A, *AB,*bB, *c, base, not_base, h)
 			if cond2 {
-				fmt.Printf("\nUnlimited\n")
+				fmt.Printf("\nUnlimited problem\n")
 				state = "Unlimited"
 			} else {
 				lambda,k := max_step(*A, *b, *c, x, xi, not_base)
@@ -214,7 +231,7 @@ func Primal(data_A []float64, data_b []float64, data_c []float64, base []int) {
 				fmt.Println("---------------------------------------------------------------")
 			}
 		} else {
-			fmt.Printf("\nSoluzione ottima: \n\t B = %v, N = %v\n\t x = %v \n\t y = %v\n", base, not_base, x.RawMatrix().Data, y)
+			fmt.Printf("\nOptimal solution: \n\t B = %v, N = %v\n\t x = %v \n\t y = %v\n", base, not_base, x.RawMatrix().Data, y)
 			state = "Ottimo"
 		}
 	}
